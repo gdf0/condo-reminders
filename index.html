@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Maintenance Calendar — Admin</title>
+<style>
+  :root{
+    --ink:#1f2a33;          /* deep slate */
+    --ink-soft:#5b6b76;
+    --paper:#f7f8f7;
+    --card:#ffffff;
+    --line:#dde3e6;
+    --pine:#2f6f5e;         /* evergreen — action color */
+    --pine-dark:#245647;
+    --brick:#a2402f;        /* danger / delete */
+    --amber:#b07d2b;        /* pending highlight */
+    --focus:#2f6f5e;
+    --radius:10px;
+    --mono:"SF Mono",ui-monospace,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font:15px/1.5 "Avenir Next","Segoe UI",system-ui,sans-serif;
+    padding-bottom:80px;
+  }
+  a{color:var(--pine)}
+  button{font:inherit;cursor:pointer}
+  :focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+
+  header.site{
+    background:var(--ink);color:#fff;
+    padding:26px 24px 22px;
+  }
+  header.site h1{
+    margin:0;font-weight:600;font-size:22px;letter-spacing:.3px;
+  }
+  header.site p{margin:4px 0 0;color:#b9c4cb;font-size:13px}
+
+  .wrap{max-width:960px;margin:0 auto;padding:0 20px}
+
+  /* Connection panel */
+  .panel{
+    background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
+    padding:20px;margin:22px auto;
+  }
+  .panel h2{margin:0 0 4px;font-size:16px}
+  .panel .hint{color:var(--ink-soft);font-size:13px;margin:0 0 14px}
+  .fields{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .fields label{display:block;font-size:12px;font-weight:600;color:var(--ink-soft);
+    text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px}
+  .fields input{
+    width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:8px;
+    font:inherit;background:#fff;
+  }
+  .fields .full{grid-column:1/-1}
+  .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:14px}
+
+  .btn{
+    border:1px solid var(--pine);background:var(--pine);color:#fff;
+    padding:9px 16px;border-radius:8px;font-weight:600;font-size:14px;
+  }
+  .btn:hover{background:var(--pine-dark)}
+  .btn.ghost{background:#fff;color:var(--pine)}
+  .btn.ghost:hover{background:#eef4f2}
+  .btn.danger{border-color:var(--brick);background:#fff;color:var(--brick);font-weight:500}
+  .btn.danger:hover{background:#faf0ee}
+  .btn:disabled{opacity:.5;cursor:not-allowed}
+
+  /* Month rail — the year at a glance */
+  .rail{
+    display:flex;gap:6px;overflow-x:auto;padding:4px 0 10px;
+    scrollbar-width:thin;
+  }
+  .rail button{
+    flex:0 0 auto;border:1px solid var(--line);background:#fff;color:var(--ink-soft);
+    border-radius:999px;padding:6px 13px;font-size:13px;font-weight:600;
+  }
+  .rail button .n{
+    display:inline-block;min-width:18px;margin-left:6px;border-radius:999px;
+    background:var(--paper);color:var(--ink-soft);font-size:11px;padding:1px 5px;
+  }
+  .rail button.active{border-color:var(--pine);background:var(--pine);color:#fff}
+  .rail button.active .n{background:rgba(255,255,255,.25);color:#fff}
+  .rail button.now{border-color:var(--amber)}
+
+  /* Task table (Airtable-style grid) */
+  .month-block{margin:6px 0 30px}
+  .month-block h3{
+    font-size:13px;text-transform:uppercase;letter-spacing:.1em;color:var(--ink-soft);
+    margin:24px 0 8px;display:flex;align-items:center;gap:10px;
+  }
+  .month-block h3 .count{font-weight:500;text-transform:none;letter-spacing:0;color:#9aa7af}
+  .month-block h3::after{content:"";flex:1;height:1px;background:var(--line)}
+
+  .grid{
+    background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
+    overflow:hidden;
+  }
+  .grow{
+    display:grid;
+    grid-template-columns:34px minmax(220px,1.6fr) 180px 90px minmax(140px,1fr) 40px;
+    align-items:center;border-bottom:1px solid var(--line);
+  }
+  .grow:last-child{border-bottom:none}
+  .grow.head{
+    background:#fafbfb;font-size:11.5px;font-weight:700;color:var(--ink-soft);
+    text-transform:uppercase;letter-spacing:.07em;
+  }
+  .grow.head > div{padding:8px 10px}
+  .grow > div{padding:2px 4px;min-width:0}
+  .grow:not(.head):hover{background:#fafcfb}
+  .grow.done .cell-task input{color:#9aa7af;text-decoration:line-through}
+
+  .cell-num{color:#b3bec5;font-size:12px;text-align:center;padding:8px 0 !important}
+  .cell-task input, .cell-comments input{
+    width:100%;border:1px solid transparent;border-radius:6px;padding:7px 8px;
+    font:inherit;background:transparent;
+  }
+  .cell-comments input{font-size:13px;color:var(--ink-soft)}
+  .grow input:hover{border-color:var(--line);background:#fff}
+  .grow input:focus{border-color:var(--pine);background:#fff;outline:none}
+
+  /* vendor pills */
+  .pill{
+    display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+    border:none;border-radius:999px;padding:4px 12px;font-size:12.5px;font-weight:600;
+    cursor:pointer;color:var(--ink);
+  }
+  .pill.empty{background:#f0f2f3;color:#9aa7af;font-weight:500}
+  .pill:hover{filter:brightness(.96)}
+  .cell-vendor input{
+    width:100%;border:1px solid var(--pine);border-radius:999px;padding:4px 11px;
+    font-size:12.5px;font-weight:600;background:#fff;outline:none;
+  }
+
+  .cell-done{text-align:center}
+  .cell-done input[type=checkbox]{width:17px;height:17px;accent-color:var(--pine);vertical-align:middle}
+
+  .cell-del button{
+    border:none;background:none;color:transparent;font-size:15px;line-height:1;
+    padding:6px;border-radius:6px;cursor:pointer;
+  }
+  .grow:hover .cell-del button{color:#b3bec5}
+  .cell-del button:hover{color:var(--brick) !important;background:#faf0ee}
+
+  .add-row{border-top:1px solid var(--line)}
+  .add-row button{
+    width:100%;border:none;background:none;color:var(--ink-soft);text-align:left;
+    padding:9px 12px;font-size:13px;cursor:pointer;
+  }
+  .add-row button:hover{color:var(--pine);background:#f4f8f6}
+
+  @media (max-width:720px){
+    .grow{grid-template-columns:1fr 110px 34px;grid-auto-rows:auto}
+    .grow.head, .cell-num, .cell-comments{display:none}
+    .grow{padding:6px 4px}
+  }
+
+  /* Sticky save bar */
+  .savebar{
+    position:fixed;left:0;right:0;bottom:0;background:var(--ink);color:#fff;
+    padding:12px 20px;display:none;justify-content:center;gap:14px;align-items:center;
+    box-shadow:0 -4px 16px rgba(0,0,0,.15);
+  }
+  .savebar.show{display:flex}
+  .savebar span{font-size:14px;color:#c9d3d9}
+
+  .toast{
+    position:fixed;top:16px;left:50%;transform:translateX(-50%);
+    background:var(--ink);color:#fff;padding:10px 18px;border-radius:8px;font-size:14px;
+    opacity:0;transition:opacity .25s;pointer-events:none;z-index:50;max-width:90vw;
+  }
+  .toast.show{opacity:1}
+  .toast.err{background:var(--brick)}
+
+  .hidden{display:none}
+  @media (max-width:640px){
+    .fields{grid-template-columns:1fr}
+  }
+</style>
+</head>
+<body>
+
+<header class="site">
+  <div class="wrap">
+    <h1>Maintenance Calendar</h1>
+    <p>Edit the task list and send test reminders. Changes are committed straight to the repository.</p>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <!-- Login -->
+  <section class="panel" id="connectPanel">
+    <h2>Admin sign in</h2>
+    <p class="hint" id="loginHint">Enter the admin password to unlock the calendar.</p>
+    <div class="fields">
+      <div class="full">
+        <label for="pw">Password</label>
+        <input id="pw" type="password" autocomplete="current-password">
+      </div>
+    </div>
+    <div class="row">
+      <button class="btn" id="connectBtn">Sign in</button>
+      <label style="font-size:13px;color:var(--ink-soft)">
+        <input type="checkbox" id="remember"> Stay signed in on this device
+      </label>
+      <span style="flex:1"></span>
+      <button class="btn ghost" id="localBtn" title="Load tasks.csv from this folder — view only">Browse locally (read-only)</button>
+    </div>
+  </section>
+
+  <!-- App -->
+  <section id="app" class="hidden">
+    <div class="panel">
+      <h2 style="margin-bottom:10px">Send a test email</h2>
+      <div class="row" style="margin-top:0">
+        <button class="btn ghost" id="testReminder">Send this month's reminder</button>
+        <button class="btn ghost" id="testPreview">Send next month's preview</button>
+        <span style="font-size:13px;color:var(--ink-soft)">Goes to the real recipient list.</span>
+      </div>
+    </div>
+
+    <nav class="rail" id="rail" aria-label="Months"></nav>
+    <div id="taskArea"></div>
+  </section>
+</div>
+
+<div class="savebar" id="savebar">
+  <span id="saveMsg">Unsaved changes</span>
+  <button class="btn" id="saveBtn">Save to repository</button>
+  <button class="btn ghost" id="discardBtn" style="border-color:#fff;color:#fff;background:transparent">Discard</button>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="config.js"></script>
+<script>
+const MONTHS = ["January","February","March","April","May","June","July",
+  "August","September","October","November","December","Annual"];
+const CSV_PATH = "tasks.csv";
+const WORKFLOW_FILE = "reminders.yml";
+
+let state = { tasks: [], sha: null, dirty: false, filter: "all" };
+let cfg = { owner:"", repo:"", token:"" };
+
+/* ---------- utilities ---------- */
+const $ = id => document.getElementById(id);
+function toast(msg, err=false){
+  const t = $("toast");
+  t.textContent = msg; t.className = "toast show" + (err ? " err" : "");
+  clearTimeout(t._h); t._h = setTimeout(()=> t.className="toast", 3500);
+}
+function api(path, opts={}){
+  return fetch(`https://api.github.com/repos/${cfg.owner}/${cfg.repo}/${path}`, {
+    ...opts,
+    headers: {
+      "Authorization": `Bearer ${cfg.token}`,
+      "Accept": "application/vnd.github+json",
+      "X-GitHub-Api-Version": "2022-11-28",
+      ...(opts.headers||{})
+    }
+  });
+}
+
+/* ---------- CSV ---------- */
+function parseCSV(text){
+  const rows = []; let row = [], field = "", inQ = false;
+  text = text.replace(/^\uFEFF/, "");
+  for (let i = 0; i < text.length; i++){
+    const c = text[i];
+    if (inQ){
+      if (c === '"'){ if (text[i+1] === '"'){ field += '"'; i++; } else inQ = false; }
+      else field += c;
+    } else if (c === '"') inQ = true;
+    else if (c === ","){ row.push(field); field = ""; }
+    else if (c === "\n" || c === "\r"){
+      if (c === "\r" && text[i+1] === "\n") i++;
+      row.push(field); field = "";
+      if (row.some(f => f !== "")) rows.push(row);
+      row = [];
+    } else field += c;
+  }
+  row.push(field);
+  if (row.some(f => f !== "")) rows.push(row);
+  return rows;
+}
+function csvField(v){
+  v = (v ?? "").toString();
+  return /[",\n\r]/.test(v) ? '"' + v.replace(/"/g,'""') + '"' : v;
+}
+function toCSV(tasks){
+  const lines = ["Month,Task,Vendor,Completed,Comments"];
+  for (const t of tasks)
+    lines.push([t.month,t.task,t.vendor,t.completed ? "checked" : "",t.comments].map(csvField).join(","));
+  return lines.join("\n") + "\n";
+}
+function normalizeMonth(m){
+  m = (m||"").trim();
+  if (/^janu/i.test(m)) return "January";
+  const hit = MONTHS.find(x => x.toLowerCase() === m.toLowerCase());
+  return hit || m;
+}
+
+/* ---------- load / save ---------- */
+function ingestCSV(text){
+  const rows = parseCSV(text);
+  const header = rows.shift().map(h => h.trim().toLowerCase());
+  const idx = n => header.indexOf(n);
+  state.tasks = rows.map(r => ({
+    month: normalizeMonth(r[idx("month")] || ""),
+    task: (r[idx("task")] || "").trim(),
+    vendor: (r[idx("vendor")] || "").trim(),
+    completed: !!(r[idx("completed")] || "").trim(),
+    comments: (r[idx("comments")] || "").trim(),
+  }));
+  state.dirty = false;
+}
+async function loadTasks(){
+  const r = await api(`contents/${CSV_PATH}`);
+  if (!r.ok) throw new Error(r.status === 404 ? "tasks.csv not found in the repository" :
+    r.status === 401 ? "Token was rejected — check it has access to this repo" :
+    `GitHub error ${r.status}`);
+  const data = await r.json();
+  state.sha = data.sha;
+  ingestCSV(decodeURIComponent(escape(atob(data.content.replace(/\n/g,"")))));
+}
+async function loadTasksLocal(){
+  const r = await fetch(`../${CSV_PATH}`, { cache:"no-store" });
+  if (!r.ok) throw new Error("Couldn't load ../tasks.csv — run a local server from the project folder (python3 -m http.server) and open /admin/.");
+  ingestCSV(await r.text());
+}
+async function saveTasks(){
+  if (state.localMode){ toast("Local preview is read-only — changes aren't saved anywhere.", true); return; }
+  $("saveBtn").disabled = true;
+  try{
+    const content = btoa(unescape(encodeURIComponent(toCSV(state.tasks))));
+    const r = await api(`contents/${CSV_PATH}`, {
+      method:"PUT",
+      body: JSON.stringify({
+        message: "Update maintenance tasks via admin page",
+        content, sha: state.sha
+      })
+    });
+    if (!r.ok){
+      if (r.status === 409){ toast("Someone else saved changes first — reloading their version.", true);
+        await loadTasks(); render(); return; }
+      throw new Error(`GitHub error ${r.status}`);
+    }
+    const data = await r.json();
+    state.sha = data.content.sha;
+    state.dirty = false;
+    updateSavebar();
+    toast("Saved. Future reminder emails will use the updated list.");
+  } catch(e){ toast(e.message, true); }
+  finally{ $("saveBtn").disabled = false; }
+}
+async function dispatchWorkflow(mode){
+  const r = await api(`actions/workflows/${WORKFLOW_FILE}/dispatches`, {
+    method:"POST",
+    body: JSON.stringify({ ref:"main", inputs:{ mode } })
+  });
+  if (r.status === 204) toast(`Test ${mode} email triggered — it should arrive within a minute or two.`);
+  else if (r.status === 404) toast("Workflow not found — is the repo's default branch 'main'?", true);
+  else toast(`Could not trigger workflow (error ${r.status}). Check the token has Actions write access.`, true);
+}
+
+/* ---------- rendering ---------- */
+function markDirty(){ state.dirty = true; updateSavebar(); }
+function updateSavebar(){
+  $("savebar").className = "savebar" + (state.dirty ? " show" : "");
+  const n = state.tasks.length;
+  $("saveMsg").textContent = state.dirty ? `Unsaved changes · ${n} task${n===1?"":"s"} total` : "";
+}
+function monthCounts(){
+  const c = {};
+  for (const m of MONTHS) c[m] = 0;
+  for (const t of state.tasks) if (c[t.month] !== undefined) c[t.month]++;
+  return c;
+}
+function renderRail(){
+  const counts = monthCounts();
+  const now = MONTHS[new Date().getMonth()];
+  const rail = $("rail"); rail.innerHTML = "";
+  const all = document.createElement("button");
+  all.textContent = "All months";
+  all.className = state.filter === "all" ? "active" : "";
+  all.onclick = () => { state.filter = "all"; render(); };
+  rail.appendChild(all);
+  for (const m of MONTHS){
+    const b = document.createElement("button");
+    b.innerHTML = `${m}<span class="n">${counts[m]}</span>`;
+    b.className = (state.filter === m ? "active " : "") + (m === now ? "now" : "");
+    b.title = m === now ? `${m} (current month)` : m;
+    b.onclick = () => { state.filter = m; render(); };
+    rail.appendChild(b);
+  }
+}
+/* consistent soft color per vendor (like Airtable's pills) */
+const PILL_COLORS = ["#cfe3ff","#cdf0d8","#ffe2b8","#ffd3cc","#e6dbff",
+                     "#c9f0ee","#ffd9ec","#e8ecb9","#dbe6ef","#f3e0c0"];
+function vendorColor(name){
+  let h = 0;
+  for (const ch of name.toLowerCase().trim()) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return PILL_COLORS[h % PILL_COLORS.length];
+}
+function vendorList(){
+  return [...new Set(state.tasks.map(t => t.vendor).filter(Boolean))].sort();
+}
+function syncVendorDatalist(){
+  let dl = $("vendorOptions");
+  if (!dl){ dl = document.createElement("datalist"); dl.id = "vendorOptions"; document.body.appendChild(dl); }
+  dl.innerHTML = vendorList().map(v => `<option value="${v.replace(/"/g,"&quot;")}">`).join("");
+}
+
+function taskRow(t, num){
+  const el = document.createElement("div");
+  el.className = "grow" + (t.completed ? " done" : "");
+
+  const cNum = document.createElement("div");
+  cNum.className = "cell-num"; cNum.textContent = num;
+
+  const cTask = document.createElement("div"); cTask.className = "cell-task";
+  const ti = document.createElement("input");
+  ti.value = t.task; ti.placeholder = "Task description…";
+  ti.oninput = () => { t.task = ti.value; markDirty(); };
+  cTask.appendChild(ti);
+
+  const cVendor = document.createElement("div"); cVendor.className = "cell-vendor";
+  function showPill(){
+    cVendor.innerHTML = "";
+    const pill = document.createElement("button");
+    if (t.vendor){
+      pill.className = "pill";
+      pill.style.background = vendorColor(t.vendor);
+      pill.textContent = t.vendor;
+    } else {
+      pill.className = "pill empty";
+      pill.textContent = "+ vendor";
+    }
+    pill.title = "Click to change vendor";
+    pill.onclick = () => {
+      cVendor.innerHTML = "";
+      const vi = document.createElement("input");
+      vi.value = t.vendor; vi.setAttribute("list","vendorOptions");
+      vi.placeholder = "Vendor / responsible";
+      const commit = () => { t.vendor = vi.value.trim(); markDirty(); syncVendorDatalist(); showPill(); };
+      vi.onblur = commit;
+      vi.onkeydown = e => { if (e.key === "Enter") vi.blur(); if (e.key === "Escape"){ vi.value = t.vendor; vi.blur(); } };
+      cVendor.appendChild(vi); vi.focus(); vi.select();
+    };
+    cVendor.appendChild(pill);
+  }
+  showPill();
+
+  const cDone = document.createElement("div"); cDone.className = "cell-done";
+  const cb = document.createElement("input");
+  cb.type = "checkbox"; cb.checked = t.completed; cb.title = "Completed";
+  cb.onchange = () => { t.completed = cb.checked;
+    el.className = "grow" + (t.completed ? " done" : ""); markDirty(); };
+  cDone.appendChild(cb);
+
+  const cCom = document.createElement("div"); cCom.className = "cell-comments";
+  const cm = document.createElement("input");
+  cm.value = t.comments; cm.placeholder = "Add a comment…";
+  cm.oninput = () => { t.comments = cm.value; markDirty(); };
+  cCom.appendChild(cm);
+
+  const cDel = document.createElement("div"); cDel.className = "cell-del";
+  const x = document.createElement("button");
+  x.textContent = "✕"; x.title = "Delete task"; x.setAttribute("aria-label","Delete task");
+  x.onclick = () => {
+    if (!confirm(`Delete "${t.task || "this task"}"?`)) return;
+    state.tasks = state.tasks.filter(o => o !== t);
+    markDirty(); render();
+  };
+  cDel.appendChild(x);
+
+  el.append(cNum, cTask, cVendor, cDone, cCom, cDel);
+  return el;
+}
+
+function headerRow(){
+  const h = document.createElement("div");
+  h.className = "grow head";
+  h.innerHTML = `<div>#</div><div>Task</div><div>Vendor</div>
+    <div style="text-align:center">Done</div><div>Comments</div><div></div>`;
+  return h;
+}
+
+function render(){
+  renderRail();
+  syncVendorDatalist();
+  const area = $("taskArea"); area.innerHTML = "";
+  const shown = state.filter === "all" ? MONTHS : [state.filter];
+  for (const m of shown){
+    const list = state.tasks.filter(t => t.month === m);
+    if (state.filter === "all" && list.length === 0 && m !== "Annual") continue;
+
+    const block = document.createElement("div"); block.className = "month-block";
+    const h = document.createElement("h3");
+    h.innerHTML = `${m} <span class="count">· ${list.length} task${list.length === 1 ? "" : "s"}</span>`;
+    block.appendChild(h);
+
+    const grid = document.createElement("div"); grid.className = "grid";
+    grid.appendChild(headerRow());
+    list.forEach((t, i) => grid.appendChild(taskRow(t, i + 1)));
+
+    const add = document.createElement("div"); add.className = "add-row";
+    const ab = document.createElement("button");
+    ab.textContent = "+ Add task";
+    ab.onclick = () => {
+      state.tasks.push({ month:m, task:"", vendor:"", completed:false, comments:"" });
+      markDirty(); render();
+      const blocks = area.querySelectorAll(".month-block");
+      for (const b of blocks) if (b.querySelector("h3").textContent.startsWith(m)){
+        const inputs = b.querySelectorAll(".cell-task input");
+        inputs[inputs.length-1]?.focus();
+      }
+    };
+    add.appendChild(ab); grid.appendChild(add);
+
+    block.appendChild(grid);
+    area.appendChild(block);
+  }
+  updateSavebar();
+}
+
+/* ---------- sign in (decrypt token vault with the admin password) ---------- */
+const b64bytes = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+
+async function decryptToken(password){
+  const v = window.MC_CONFIG.vault;
+  const enc = new TextEncoder();
+  const keyMaterial = await crypto.subtle.importKey("raw", enc.encode(password), "PBKDF2", false, ["deriveKey"]);
+  const key = await crypto.subtle.deriveKey(
+    { name:"PBKDF2", salt:b64bytes(v.salt), iterations:v.iterations || 600000, hash:"SHA-256" },
+    keyMaterial, { name:"AES-GCM", length:256 }, false, ["decrypt"]);
+  const pt = await crypto.subtle.decrypt({ name:"AES-GCM", iv:b64bytes(v.iv) }, key, b64bytes(v.data));
+  return new TextDecoder().decode(pt);
+}
+
+async function unlock(token){
+  cfg.owner = window.MC_CONFIG.owner;
+  cfg.repo = window.MC_CONFIG.repo;
+  cfg.token = token;
+  await loadTasks();
+  $("connectPanel").classList.add("hidden");
+  $("app").classList.remove("hidden");
+  render();
+  toast(`Loaded ${state.tasks.length} tasks.`);
+}
+
+async function connect(){
+  if (!window.MC_CONFIG || !window.MC_CONFIG.vault){
+    toast("config.js is missing or incomplete — run admin/setup.html first.", true); return;
+  }
+  const pw = $("pw").value;
+  if (!pw){ toast("Enter the admin password.", true); return; }
+  $("connectBtn").disabled = true;
+  try{
+    let token;
+    try{ token = await decryptToken(pw); }
+    catch(_){ throw new Error("Incorrect password."); }
+    await unlock(token);
+    if ($("remember").checked) sessionStorage.setItem("mc_token", token);
+  } catch(e){ toast(e.message, true); }
+  finally{ $("connectBtn").disabled = false; }
+}
+
+$("connectBtn").onclick = connect;
+$("pw").addEventListener("keydown", e => { if (e.key === "Enter") connect(); });
+
+/* local read-only preview */
+state.localMode = false;
+$("localBtn").onclick = async () => {
+  $("localBtn").disabled = true;
+  try{
+    await loadTasksLocal();
+    state.localMode = true;
+    $("connectPanel").classList.add("hidden");
+    $("app").classList.remove("hidden");
+    // disable actions that need GitHub
+    for (const id of ["testReminder","testPreview"]){
+      $(id).disabled = true; $(id).title = "Not available in local preview";
+    }
+    $("app").querySelector(".panel .row span").textContent =
+      "Local preview — sending and saving are disabled.";
+    render();
+    toast(`Local preview: ${state.tasks.length} tasks loaded (read-only).`);
+  } catch(e){ toast(e.message, true); }
+  finally{ $("localBtn").disabled = false; }
+};
+$("saveBtn").onclick = saveTasks;
+$("discardBtn").onclick = async () => {
+  if (!confirm("Discard all unsaved changes?")) return;
+  await loadTasks(); render();
+};
+$("testReminder").onclick = () => dispatchWorkflow("reminder");
+$("testPreview").onclick = () => dispatchWorkflow("preview");
+window.addEventListener("beforeunload", e => { if (state.dirty){ e.preventDefault(); e.returnValue = ""; } });
+
+/* auto-unlock if "stay signed in" was used this browser session */
+(async () => {
+  const t = sessionStorage.getItem("mc_token");
+  if (t && window.MC_CONFIG){
+    try{ await unlock(t); }
+    catch(_){ sessionStorage.removeItem("mc_token"); }
+  }
+})();
+</script>
+</body>
+</html>
