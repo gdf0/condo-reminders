@@ -113,16 +113,20 @@
   .grow.head > div{padding:8px 10px}
   .grow > div{padding:2px 4px;min-width:0}
   .grow:not(.head):hover{background:#fafcfb}
-  .grow.done .cell-task input{color:#9aa7af;text-decoration:line-through}
+  .grow.done .cell-task textarea{color:#9aa7af;text-decoration:line-through}
 
   .cell-num{color:#b3bec5;font-size:12px;text-align:center;padding:8px 0 !important}
-  .cell-task input, .cell-comments input{
+  .cell-task textarea, .cell-comments input{
     width:100%;border:1px solid transparent;border-radius:6px;padding:7px 8px;
     font:inherit;background:transparent;
   }
+  .cell-task textarea{
+    resize:none;overflow:hidden;display:block;line-height:1.4;
+    white-space:pre-wrap;word-break:break-word;
+  }
   .cell-comments input{font-size:13px;color:var(--ink-soft)}
-  .grow input:hover{border-color:var(--line);background:#fff}
-  .grow input:focus{border-color:var(--pine);background:#fff;outline:none}
+  .grow input:hover, .grow textarea:hover{border-color:var(--line);background:#fff}
+  .grow input:focus, .grow textarea:focus{border-color:var(--pine);background:#fff;outline:none}
 
   /* vendor pills */
   .pill{
@@ -430,10 +434,12 @@ function taskRow(t, num){
   cNum.className = "cell-num"; cNum.textContent = num;
 
   const cTask = document.createElement("div"); cTask.className = "cell-task";
-  const ti = document.createElement("input");
-  ti.value = t.task; ti.placeholder = "Task description…";
-  ti.oninput = () => { t.task = ti.value; markDirty(); };
+  const ti = document.createElement("textarea");
+  ti.rows = 1; ti.value = t.task; ti.placeholder = "Task description…";
+  const autosize = () => { ti.style.height = "auto"; ti.style.height = ti.scrollHeight + "px"; };
+  ti.oninput = () => { t.task = ti.value; autosize(); markDirty(); };
   cTask.appendChild(ti);
+  requestAnimationFrame(autosize);
 
   const cVendor = document.createElement("div"); cVendor.className = "cell-vendor";
   function showPill(){
@@ -523,7 +529,7 @@ function render(){
       markDirty(); render();
       const blocks = area.querySelectorAll(".month-block");
       for (const b of blocks) if (b.querySelector("h3").textContent.startsWith(m)){
-        const inputs = b.querySelectorAll(".cell-task input");
+        const inputs = b.querySelectorAll(".cell-task textarea");
         inputs[inputs.length-1]?.focus();
       }
     };
