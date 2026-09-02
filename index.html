@@ -198,20 +198,25 @@
   <section class="panel" id="connectPanel">
     <h2>Admin sign in</h2>
     <p class="hint" id="loginHint">Enter the admin password to unlock the calendar.</p>
-    <div class="fields">
-      <div class="full">
-        <label for="pw">Password</label>
-        <input id="pw" type="password" autocomplete="current-password">
+    <form id="loginForm" method="post" action="">
+      <!-- hidden username helps password managers label the saved entry -->
+      <input type="text" name="username" value="condo-admin" autocomplete="username"
+             readonly style="position:absolute;left:-9999px;" tabindex="-1" aria-hidden="true">
+      <div class="fields">
+        <div class="full">
+          <label for="pw">Password</label>
+          <input id="pw" name="password" type="password" autocomplete="current-password" required>
+        </div>
       </div>
-    </div>
-    <div class="row">
-      <button class="btn" id="connectBtn">Sign in</button>
-      <label style="font-size:13px;color:var(--ink-soft)">
-        <input type="checkbox" id="remember"> Stay signed in on this device
-      </label>
-      <span style="flex:1"></span>
-      <button class="btn ghost" id="localBtn" title="Load tasks.csv from this folder — view only">Browse locally (read-only)</button>
-    </div>
+      <div class="row">
+        <button class="btn" id="connectBtn" type="submit">Sign in</button>
+        <label style="font-size:13px;color:var(--ink-soft)">
+          <input type="checkbox" id="remember"> Stay signed in on this device
+        </label>
+        <span style="flex:1"></span>
+        <button class="btn ghost" id="localBtn" type="button" title="Load tasks.csv from this folder — view only">Browse locally (read-only)</button>
+      </div>
+    </form>
   </section>
 
   <!-- App -->
@@ -572,8 +577,7 @@ async function connect(){
   finally{ $("connectBtn").disabled = false; }
 }
 
-$("connectBtn").onclick = connect;
-$("pw").addEventListener("keydown", e => { if (e.key === "Enter") connect(); });
+$("loginForm").addEventListener("submit", e => { e.preventDefault(); connect(); });
 
 /* local read-only preview */
 state.localMode = false;
