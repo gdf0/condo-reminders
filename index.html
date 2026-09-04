@@ -70,6 +70,11 @@
   .btn.danger:hover{background:#faf0ee}
   .btn:disabled{opacity:.5;cursor:not-allowed}
 
+  select#sendMonth{
+    padding:8px 10px;border:1px solid var(--line);border-radius:8px;
+    font:inherit;background:#fff;color:var(--ink);
+  }
+
   /* Month rail — the year at a glance */
   .rail{
     display:flex;gap:6px;overflow-x:auto;padding:4px 0 10px;
@@ -230,7 +235,14 @@
       <div class="row" style="margin-top:0">
         <button class="btn ghost" id="testReminder">Send this month's reminder</button>
         <button class="btn ghost" id="testPreview">Send next month's preview</button>
-        <span style="font-size:13px;color:var(--ink-soft)">Goes to the real recipient list.</span>
+      </div>
+      <div class="row">
+        <label for="sendMonth" style="font-size:13px;color:var(--ink-soft)">Or pick a specific month:</label>
+        <select id="sendMonth"></select>
+        <button class="btn ghost" id="sendMonthBtn">Send reminder for this month</button>
+      </div>
+      <div class="row" style="margin-top:6px">
+        <span style="font-size:13px;color:var(--ink-soft)">All of these go to the real recipient list.</span>
       </div>
     </div>
 
@@ -368,14 +380,22 @@ async function saveTasks(){
   } catch(e){ toast(e.message, true); }
   finally{ $("saveBtn").disabled = false; }
 }
-async function dispatchWorkflow(mode){
+async function dispatchWorkflow(mode, month){
+  const inputs = { mode };
+  if (month) inputs.month = month;
   const r = await api(`actions/workflows/${WORKFLOW_FILE}/dispatches`, {
     method:"POST",
-    body: JSON.stringify({ ref:"main", inputs:{ mode } })
+    body: JSON.stringify({ ref:"main", inputs })
   });
-  if (r.status === 204) toast(`Test ${mode} email triggered — it should arrive within a minute or two.`);
+  const label = month ? `${month} ${mode}` : `${mode}`;
+  if (r.status === 204) toast(`${label} email triggered — it should arrive within a minute or two.`);
   else if (r.status === 404) toast("Workflow not found — is the repo's default branch 'main'?", true);
   else toast(`Could not trigger workflow (error ${r.status}). Check the token has Actions write access.`, true);
+}
+function populateSendMonth(){
+  const sel = $("sendMonth"); if (!sel) return;
+  sel.innerHTML = MONTHS.slice(0, 12).map(m => `<option value="${m}">${m}</option>`).join("");
+  sel.value = MONTHS[new Date().getMonth()];
 }
 
 /* ---------- rendering ---------- */
@@ -562,6 +582,7 @@ async function unlock(token){
   await loadTasks();
   $("connectPanel").classList.add("hidden");
   $("app").classList.remove("hidden");
+  populateSendMonth();
   render();
   toast(`Loaded ${state.tasks.length} tasks.`);
 }
@@ -594,11 +615,12 @@ $("localBtn").onclick = async () => {
     state.localMode = true;
     $("connectPanel").classList.add("hidden");
     $("app").classList.remove("hidden");
+    populateSendMonth();
     // disable actions that need GitHub
-    for (const id of ["testReminder","testPreview"]){
+    for (const id of ["testReminder","testPreview","sendMonth","sendMonthBtn"]){
       $(id).disabled = true; $(id).title = "Not available in local preview";
     }
-    $("app").querySelector(".panel .row span").textContent =
+    $("app").querySelector(".panel .row:last-child span").textContent =
       "Local preview — sending and saving are disabled.";
     render();
     toast(`Local preview: ${state.tasks.length} tasks loaded (read-only).`);
@@ -612,6 +634,7 @@ $("discardBtn").onclick = async () => {
 };
 $("testReminder").onclick = () => dispatchWorkflow("reminder");
 $("testPreview").onclick = () => dispatchWorkflow("preview");
+$("sendMonthBtn").onclick = () => dispatchWorkflow("reminder", $("sendMonth").value);
 window.addEventListener("beforeunload", e => { if (state.dirty){ e.preventDefault(); e.returnValue = ""; } });
 
 /* auto-unlock if "stay signed in" was used this browser session */
