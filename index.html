@@ -190,6 +190,34 @@
   @media (max-width:640px){
     .fields{grid-template-columns:1fr}
   }
+
+  /* Recipient pills */
+  .recipient-pill{
+    display:inline-flex;align-items:center;gap:7px;background:#eef4f2;color:var(--ink);
+    border-radius:999px;padding:5px 8px 5px 13px;font-size:13px;font-weight:600;
+  }
+  .recipient-pill button{
+    border:none;background:none;color:#7f9c93;font-size:11px;line-height:1;
+    padding:3px;border-radius:50%;cursor:pointer;
+  }
+  .recipient-pill button:hover{color:var(--brick);background:#fff}
+
+  /* Confirmation modal */
+  .modal-overlay{
+    position:fixed;inset:0;background:rgba(20,26,30,.5);
+    display:flex;align-items:center;justify-content:center;padding:20px;z-index:100;
+  }
+  .modal-overlay.hidden{display:none}
+  .modal-card{
+    background:var(--card);border-radius:var(--radius);padding:22px;max-width:440px;width:100%;
+    box-shadow:0 12px 40px rgba(0,0,0,.25);max-height:80vh;overflow-y:auto;
+  }
+  .modal-card h3{margin:0 0 12px;font-size:17px}
+  .modal-card ul{margin:0 0 14px;padding-left:18px;font-size:14px;line-height:1.6}
+  .modal-card .msg-preview{
+    white-space:pre-wrap;background:#fdf3e3;border-left:4px solid var(--amber);
+    border-radius:6px;padding:10px 12px;font-size:14px;margin:0 0 4px;
+  }
 </style>
 </head>
 <body>
@@ -231,6 +259,19 @@
   <!-- App -->
   <section id="app" class="hidden">
     <div class="panel">
+      <h2 style="margin-bottom:4px">Notification recipients</h2>
+      <p class="hint">These addresses receive every reminder, preview, and manual send.</p>
+      <div id="recipientsList" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px"></div>
+      <div class="row" style="margin-top:0">
+        <input id="newRecipient" type="email" placeholder="name@example.com"
+          style="flex:1;min-width:200px;padding:9px 11px;border:1px solid var(--line);border-radius:8px;font:inherit">
+        <button class="btn ghost" id="addRecipientBtn">+ Add</button>
+        <span style="flex:1"></span>
+        <button class="btn" id="saveRecipientsBtn" disabled>Save recipients</button>
+      </div>
+    </div>
+
+    <div class="panel" id="sendPanel">
       <h2 style="margin-bottom:10px">Send a test email</h2>
       <div class="row" style="margin-top:0">
         <button class="btn ghost" id="testReminder">Send this month's reminder</button>
@@ -264,18 +305,36 @@
 
 <div class="toast" id="toast"></div>
 
+<div class="modal-overlay hidden" id="confirmOverlay">
+  <div class="modal-card">
+    <h3 id="confirmTitle">Send email?</h3>
+    <div id="confirmBody"></div>
+    <div class="row" style="justify-content:flex-end;margin-top:16px">
+      <button class="btn ghost" id="confirmCancel">Cancel</button>
+      <button class="btn" id="confirmSend">Send</button>
+    </div>
+  </div>
+</div>
+
 <script src="config.js"></script>
 <script>
 const MONTHS = ["January","February","March","April","May","June","July",
   "August","September","October","November","December","Annual"];
 const CSV_PATH = "tasks.csv";
+const RECIPIENTS_PATH = "recipients.txt";
 const WORKFLOW_FILE = "reminders.yml";
 
-let state = { tasks: [], sha: null, dirty: false, filter: "all" };
+let state = { tasks: [], sha: null, dirty: false, filter: "all",
+  recipients: [], recipientsHeader: [], recipientsSha: null, recipientsDirty: false };
 let cfg = { owner:"", repo:"", token:"" };
 
 /* ---------- utilities ---------- */
 const $ = id => document.getElementById(id);
+function escapeHtml(s){
+  return (s ?? "").toString().replace(/[&<>"']/g, c => ({
+    "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+  }[c]));
+}
 function toast(msg, err=false){
   const t = $("toast");
   t.textContent = msg; t.className = "toast show" + (err ? " err" : "");
@@ -332,6 +391,22 @@ function normalizeMonth(m){
   return hit || m;
 }
 
+/* ---------- recipients.txt (one email per line; leading #/blank lines kept as a header) ---------- */
+function parseRecipientsFile(text){
+  const lines = (text || "").replace(/^\uFEFF/, "").split(/\r\n|\n/);
+  const header = [], emails = [];
+  for (const raw of lines){
+    const line = raw.trim();
+    if (emails.length === 0 && (!line || line.startsWith("#"))){ header.push(raw); continue; }
+    if (line) emails.push(line);
+  }
+  return { header, emails };
+}
+function toRecipientsFile({ header, emails }){
+  const head = header.length ? header.join("\n") + "\n" : "";
+  return head + emails.join("\n") + "\n";
+}
+
 /* ---------- load / save ---------- */
 function ingestCSV(text){
   const rows = parseCSV(text);
@@ -359,6 +434,51 @@ async function loadTasksLocal(){
   const r = await fetch(`../${CSV_PATH}`, { cache:"no-store" });
   if (!r.ok) throw new Error("Couldn't load ../tasks.csv — run a local server from the project folder (python3 -m http.server) and open /admin/.");
   ingestCSV(await r.text());
+}
+async function loadRecipients(){
+  const r = await api(`contents/${RECIPIENTS_PATH}`);
+  if (r.status === 404){ state.recipients = []; state.recipientsHeader = []; state.recipientsSha = null; return; }
+  if (!r.ok) throw new Error(`GitHub error ${r.status} loading recipients.txt`);
+  const data = await r.json();
+  state.recipientsSha = data.sha;
+  const parsed = parseRecipientsFile(decodeURIComponent(escape(atob(data.content.replace(/\n/g,"")))));
+  state.recipients = parsed.emails;
+  state.recipientsHeader = parsed.header;
+  state.recipientsDirty = false;
+}
+async function loadRecipientsLocal(){
+  try{
+    const r = await fetch(`../${RECIPIENTS_PATH}`, { cache:"no-store" });
+    if (!r.ok) return;
+    const parsed = parseRecipientsFile(await r.text());
+    state.recipients = parsed.emails;
+    state.recipientsHeader = parsed.header;
+  } catch(_){ /* recipients.txt is optional for local preview */ }
+}
+async function saveRecipients(){
+  if (state.localMode){ toast("Local preview is read-only — changes aren't saved anywhere.", true); return; }
+  $("saveRecipientsBtn").disabled = true;
+  try{
+    const body = toRecipientsFile({ header: state.recipientsHeader, emails: state.recipients });
+    const content = btoa(unescape(encodeURIComponent(body)));
+    const r = await api(`contents/${RECIPIENTS_PATH}`, {
+      method:"PUT",
+      body: JSON.stringify({
+        message: "Update notification recipients via admin page",
+        content, sha: state.recipientsSha
+      })
+    });
+    if (!r.ok){
+      if (r.status === 409){ toast("Someone else saved recipients first — reloading their version.", true);
+        await loadRecipients(); renderRecipients(); return; }
+      throw new Error(`GitHub error ${r.status}`);
+    }
+    const data = await r.json();
+    state.recipientsSha = data.content.sha;
+    state.recipientsDirty = false;
+    toast("Recipients saved.");
+  } catch(e){ toast(e.message, true); }
+  finally{ $("saveRecipientsBtn").disabled = !state.recipientsDirty; }
 }
 async function saveTasks(){
   if (state.localMode){ toast("Local preview is read-only — changes aren't saved anywhere.", true); return; }
@@ -408,8 +528,62 @@ function populateSendMonth(){
   sel.value = MONTHS[new Date().getMonth()];
 }
 
+/* ---------- confirm-before-send dialog ---------- */
+function openSendConfirm({ mode, month, message }){
+  return new Promise(resolve => {
+    const label = month ? `${mode === "preview" ? "Preview" : "Reminder"} for ${month}`
+      : (mode === "preview" ? "Next month's preview" : "This month's reminder");
+    $("confirmTitle").textContent = `Send "${label}"?`;
+
+    const recipients = state.recipients.length ? state.recipients : null;
+    let body = recipients
+      ? `<p style="margin:0 0 8px;font-size:14px;color:var(--ink-soft)">This sends a real email to:</p>
+         <ul>${recipients.map(r => `<li>${escapeHtml(r)}</li>`).join("")}</ul>`
+      : `<p style="margin:0 0 14px;font-size:14px;color:var(--brick)">
+           No recipients are configured — add some in "Notification recipients" first, or nothing will be sent.</p>`;
+    const trimmedMessage = (message || "").trim();
+    if (trimmedMessage){
+      body += `<p style="margin:0 0 6px;font-size:12px;font-weight:600;text-transform:uppercase;
+                 letter-spacing:.05em;color:var(--ink-soft)">Extra message</p>
+               <div class="msg-preview">${escapeHtml(trimmedMessage)}</div>`;
+    }
+    $("confirmBody").innerHTML = body;
+    $("confirmOverlay").classList.remove("hidden");
+
+    const finish = result => {
+      $("confirmOverlay").classList.add("hidden");
+      $("confirmSend").onclick = null;
+      $("confirmCancel").onclick = null;
+      resolve(result);
+    };
+    $("confirmSend").onclick = () => finish(true);
+    $("confirmCancel").onclick = () => finish(false);
+  });
+}
+
 /* ---------- rendering ---------- */
 function markDirty(){ state.dirty = true; updateSavebar(); }
+function markRecipientsDirty(){ state.recipientsDirty = true; $("saveRecipientsBtn").disabled = false; }
+function renderRecipients(){
+  const list = $("recipientsList"); list.innerHTML = "";
+  if (!state.recipients.length){
+    const empty = document.createElement("span");
+    empty.style.cssText = "font-size:13px;color:var(--ink-soft)";
+    empty.textContent = "No recipients yet — add one below.";
+    list.appendChild(empty);
+  }
+  state.recipients.forEach((email, i) => {
+    const pill = document.createElement("span");
+    pill.className = "recipient-pill";
+    const label = document.createElement("span");
+    label.textContent = email;
+    const x = document.createElement("button");
+    x.textContent = "✕"; x.title = "Remove"; x.setAttribute("aria-label", `Remove ${email}`);
+    x.onclick = () => { state.recipients.splice(i, 1); markRecipientsDirty(); renderRecipients(); };
+    pill.append(label, x);
+    list.appendChild(pill);
+  });
+}
 function updateSavebar(){
   $("savebar").className = "savebar" + (state.dirty ? " show" : "");
   const n = state.tasks.length;
@@ -590,11 +764,13 @@ async function unlock(token){
   cfg.repo = window.MC_CONFIG.repo;
   cfg.token = token;
   await loadTasks();
+  await loadRecipients();
   $("connectPanel").classList.add("hidden");
   $("app").classList.remove("hidden");
   populateSendMonth();
+  renderRecipients();
   render();
-  toast(`Loaded ${state.tasks.length} tasks.`);
+  toast(`Loaded ${state.tasks.length} tasks and ${state.recipients.length} recipient${state.recipients.length === 1 ? "" : "s"}.`);
 }
 
 async function connect(){
@@ -622,16 +798,19 @@ $("localBtn").onclick = async () => {
   $("localBtn").disabled = true;
   try{
     await loadTasksLocal();
+    await loadRecipientsLocal();
     state.localMode = true;
     $("connectPanel").classList.add("hidden");
     $("app").classList.remove("hidden");
     populateSendMonth();
     // disable actions that need GitHub
-    for (const id of ["testReminder","testPreview","sendMonth","sendMonthBtn","extraMessage"]){
+    for (const id of ["testReminder","testPreview","sendMonth","sendMonthBtn","extraMessage",
+                       "newRecipient","addRecipientBtn","saveRecipientsBtn"]){
       $(id).disabled = true; $(id).title = "Not available in local preview";
     }
-    $("app").querySelector(".panel .row:last-child span").textContent =
+    $("sendPanel").querySelector(".row:last-child span").textContent =
       "Local preview — sending and saving are disabled.";
+    renderRecipients();
     render();
     toast(`Local preview: ${state.tasks.length} tasks loaded (read-only).`);
   } catch(e){ toast(e.message, true); }
@@ -642,9 +821,34 @@ $("discardBtn").onclick = async () => {
   if (!confirm("Discard all unsaved changes?")) return;
   await loadTasks(); render();
 };
-$("testReminder").onclick = () => dispatchWorkflow("reminder", null, $("extraMessage").value);
-$("testPreview").onclick = () => dispatchWorkflow("preview", null, $("extraMessage").value);
-$("sendMonthBtn").onclick = () => dispatchWorkflow("reminder", $("sendMonth").value, $("extraMessage").value);
+$("addRecipientBtn").onclick = () => {
+  const input = $("newRecipient");
+  const val = input.value.trim();
+  if (!val) return;
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val)){ toast("Enter a valid email address.", true); return; }
+  if (state.recipients.some(e => e.toLowerCase() === val.toLowerCase())){
+    toast("Already in the list.", true); input.value = ""; return;
+  }
+  state.recipients.push(val);
+  input.value = "";
+  markRecipientsDirty();
+  renderRecipients();
+};
+$("newRecipient").addEventListener("keydown", e => { if (e.key === "Enter"){ e.preventDefault(); $("addRecipientBtn").click(); } });
+$("saveRecipientsBtn").onclick = saveRecipients;
+$("testReminder").onclick = async () => {
+  const message = $("extraMessage").value;
+  if (await openSendConfirm({ mode:"reminder", month:null, message })) dispatchWorkflow("reminder", null, message);
+};
+$("testPreview").onclick = async () => {
+  const message = $("extraMessage").value;
+  if (await openSendConfirm({ mode:"preview", month:null, message })) dispatchWorkflow("preview", null, message);
+};
+$("sendMonthBtn").onclick = async () => {
+  const month = $("sendMonth").value;
+  const message = $("extraMessage").value;
+  if (await openSendConfirm({ mode:"reminder", month, message })) dispatchWorkflow("reminder", month, message);
+};
 window.addEventListener("beforeunload", e => { if (state.dirty){ e.preventDefault(); e.returnValue = ""; } });
 
 /* auto-unlock if "stay signed in" was used this browser session */
