@@ -241,6 +241,11 @@
         <select id="sendMonth"></select>
         <button class="btn ghost" id="sendMonthBtn">Send reminder for this month</button>
       </div>
+      <div class="row" style="align-items:flex-start">
+        <label for="extraMessage" style="font-size:13px;color:var(--ink-soft);padding-top:9px">Additional message (optional):</label>
+        <textarea id="extraMessage" rows="2" placeholder="Add a note to include at the top of the email…"
+          style="flex:1;min-width:220px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font:inherit;resize:vertical"></textarea>
+      </div>
       <div class="row" style="margin-top:6px">
         <span style="font-size:13px;color:var(--ink-soft)">All of these go to the real recipient list.</span>
       </div>
@@ -380,15 +385,20 @@ async function saveTasks(){
   } catch(e){ toast(e.message, true); }
   finally{ $("saveBtn").disabled = false; }
 }
-async function dispatchWorkflow(mode, month){
+async function dispatchWorkflow(mode, month, message){
   const inputs = { mode };
   if (month) inputs.month = month;
+  message = (message || "").trim();
+  if (message) inputs.message = message;
   const r = await api(`actions/workflows/${WORKFLOW_FILE}/dispatches`, {
     method:"POST",
     body: JSON.stringify({ ref:"main", inputs })
   });
   const label = month ? `${month} ${mode}` : `${mode}`;
-  if (r.status === 204) toast(`${label} email triggered — it should arrive within a minute or two.`);
+  if (r.status === 204){
+    toast(`${label} email triggered — it should arrive within a minute or two.`);
+    $("extraMessage").value = "";
+  }
   else if (r.status === 404) toast("Workflow not found — is the repo's default branch 'main'?", true);
   else toast(`Could not trigger workflow (error ${r.status}). Check the token has Actions write access.`, true);
 }
@@ -617,7 +627,7 @@ $("localBtn").onclick = async () => {
     $("app").classList.remove("hidden");
     populateSendMonth();
     // disable actions that need GitHub
-    for (const id of ["testReminder","testPreview","sendMonth","sendMonthBtn"]){
+    for (const id of ["testReminder","testPreview","sendMonth","sendMonthBtn","extraMessage"]){
       $(id).disabled = true; $(id).title = "Not available in local preview";
     }
     $("app").querySelector(".panel .row:last-child span").textContent =
@@ -632,9 +642,9 @@ $("discardBtn").onclick = async () => {
   if (!confirm("Discard all unsaved changes?")) return;
   await loadTasks(); render();
 };
-$("testReminder").onclick = () => dispatchWorkflow("reminder");
-$("testPreview").onclick = () => dispatchWorkflow("preview");
-$("sendMonthBtn").onclick = () => dispatchWorkflow("reminder", $("sendMonth").value);
+$("testReminder").onclick = () => dispatchWorkflow("reminder", null, $("extraMessage").value);
+$("testPreview").onclick = () => dispatchWorkflow("preview", null, $("extraMessage").value);
+$("sendMonthBtn").onclick = () => dispatchWorkflow("reminder", $("sendMonth").value, $("extraMessage").value);
 window.addEventListener("beforeunload", e => { if (state.dirty){ e.preventDefault(); e.returnValue = ""; } });
 
 /* auto-unlock if "stay signed in" was used this browser session */
